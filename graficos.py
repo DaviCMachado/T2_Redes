@@ -1,10 +1,3 @@
-#  • Gráficos obrigatórios:
-#  • Curva da janela de congestionamento ao longo do tempo.
-#  • Gráfico de dispersão do RTT por conexão.
-#  • CDF do tempo de estabelecimento das conexões.
-#  • Histograma da taxa de retransmissões.
-#  • Comparação entre conexões curtas e longas.
-
 import os
 import json
 import pandas as pd
@@ -15,7 +8,10 @@ from matplotlib import dates as mdates
 
 plt.style.use('seaborn-v0_8-darkgrid')
 
-def salvar_figura(caminho):
+PASTA_GRAFICOS = "graficos_opcionais"
+
+def salvar_figura(nome_arquivo):
+    caminho = os.path.join(PASTA_GRAFICOS, nome_arquivo)
     try:
         plt.tight_layout()
         plt.savefig(caminho)
@@ -25,15 +21,14 @@ def salvar_figura(caminho):
         plt.close()
 
 def gerar_graficos(stats):
-    for pasta in ["img/barras", "img/tempo", "img/heatmap", "img/scatter"]:
-        os.makedirs(pasta, exist_ok=True)
+    os.makedirs(PASTA_GRAFICOS, exist_ok=True)
 
     # Scatter tamanho x ipg
     df = pd.DataFrame(stats.get("relacao_tamanho_frequencia", []), columns=["tamanho", "ipg"])
-    gerar_scatter_tamanho_frequencia(df, caminho="img/scatter/tamanho_frequencia.png")
+    gerar_scatter_tamanho_frequencia(df, "tamanho_frequencia.png")
 
     # Barra top IPs destino
-    gerar_barra(stats.get("top_ips_destino", {}), "Top IPs de Destino", "img/barras/ip_destino.png")
+    gerar_barra(stats.get("top_ips_destino", {}), "Top IPs de Destino", "ip_destino.png")
 
     # Pacotes por tempo
     pacotes_por_tempo = stats.get("pacotes_por_tempo", None)
@@ -45,18 +40,18 @@ def gerar_graficos(stats):
                 pacotes_por_tempo = pd.DataFrame(pacotes_por_tempo, columns=["timestamp", "count"])
         pacotes_por_tempo['timestamp'] = pd.to_datetime(pacotes_por_tempo['timestamp'], errors='coerce')
         pacotes_por_tempo.set_index('timestamp', inplace=True)
-        gerar_tempo(pacotes_por_tempo, "Pacotes ao Longo do Tempo", "img/tempo/pacotes_tempo.png")
+        gerar_tempo(pacotes_por_tempo, "Pacotes ao Longo do Tempo", "pacotes_tempo.png")
 
     # Heatmap IPs ativos
     heatmap = stats.get("heatmap_ips_tempo", {})
     matriz = heatmap.get("matriz", None)
     ips = heatmap.get("ips", [])
     tempos = heatmap.get("tempos", [])
-    gerar_heatmap_ips_ativos(matriz, ips, tempos, "Mapa de Calor dos IPs mais Ativos", "img/heatmap/ips_ativos_tempo.png")
+    gerar_heatmap_ips_ativos(matriz, ips, tempos, "Mapa de Calor dos IPs mais Ativos", "ips_ativos_tempo.png")
 
     # Tráfego agregado por minuto
     trafego = stats.get("trafego_por_minuto", {})
-    gerar_trafego_agrupado_tempo(trafego, "Tráfego Agregado ao Longo do Tempo", "img/tempo/trafego_agregado_tempo.png")
+    gerar_trafego_agrupado_tempo(trafego, "Tráfego Agregado ao Longo do Tempo", "trafego_agregado_tempo.png")
 
     # Gráficos obrigatórios TCP
     conexoes_tcp = stats.get("conexoes_tcp", {})
@@ -67,8 +62,7 @@ def gerar_graficos(stats):
         gerar_histograma_retransmissoes(conexoes_tcp)
         comparar_conexoes(conexoes_tcp)
 
-
-def gerar_scatter_tamanho_frequencia(df, caminho):
+def gerar_scatter_tamanho_frequencia(df, nome_arquivo):
     if df.empty or "tamanho" not in df.columns or "ipg" not in df.columns:
         return
     plt.figure(figsize=(10, 6))
@@ -77,10 +71,9 @@ def gerar_scatter_tamanho_frequencia(df, caminho):
     plt.ylabel("Tamanho do Pacote (bytes)")
     plt.title("Relação entre IPG e Tamanho de Pacote")
     plt.grid(True)
-    salvar_figura(caminho)
+    salvar_figura(nome_arquivo)
 
-
-def gerar_barra(dados_dict, titulo, caminho_saida):
+def gerar_barra(dados_dict, titulo, nome_arquivo):
     if not dados_dict:
         return
     nomes = list(dados_dict.keys())
@@ -89,21 +82,16 @@ def gerar_barra(dados_dict, titulo, caminho_saida):
     plt.bar(nomes, valores, color='skyblue')
     plt.title(titulo)
     plt.xticks(rotation=45, ha='right')
-    salvar_figura(caminho_saida)
+    salvar_figura(nome_arquivo)
 
-
-def gerar_tempo(stats, titulo, caminho_imagem):
+def gerar_tempo(stats, titulo, nome_arquivo):
     if stats.empty:
         return
     stats.index = pd.to_datetime(stats.index, errors='coerce')
     stats = stats.dropna()
-
-    # Filtrar timestamps com ano >= 2024
     stats = stats[stats.index.year >= 2024]
-
     if stats.empty:
         return
-
     try:
         start_time = pd.Timestamp(stats.index.date[0]) + pd.Timedelta(hours=5)
         end_time = start_time + pd.Timedelta(minutes=15)
@@ -114,7 +102,6 @@ def gerar_tempo(stats, titulo, caminho_imagem):
         stats_intervalo = stats
     if stats_intervalo.empty:
         return
-
     stats_aggregated = stats_intervalo.resample('min').sum()
     plt.figure(figsize=(10, 6))
     plt.plot(stats_aggregated.index, stats_aggregated.values, label=titulo)
@@ -122,75 +109,31 @@ def gerar_tempo(stats, titulo, caminho_imagem):
     plt.xlabel('Tempo')
     plt.ylabel('Quantidade de Pacotes')
     plt.xticks(rotation=45)
-    salvar_figura(caminho_imagem)
+    salvar_figura(nome_arquivo)
 
-
-
-def gerar_heatmap_ips_ativos(matrix, ips, tempos, titulo, caminho):
+def gerar_heatmap_ips_ativos(matrix, ips, tempos, titulo, nome_arquivo):
     if matrix is None or not ips or not tempos:
-        print("Aviso: Dados insuficientes para plotagem do heatmap.")
         return
-
-    print(f"Total de IPs recebidos: {len(ips)}")
-    print(f"Total de tempos recebidos: {len(tempos)}")
-
-    # Filtrar tempos para 2025 e ordenar
     tempos_2025 = [tempo for tempo in tempos if pd.to_datetime(tempo, errors='coerce').year == 2025]
     tempos_2025 = sorted(tempos_2025, key=lambda x: pd.to_datetime(x))
-
-    print(f"Tempos filtrados para 2025 (total {len(tempos_2025)}): {tempos_2025[:10]}")
-
     matrix_df = pd.DataFrame.from_dict(matrix, orient='index').fillna(0)
-
-    print(f"Matriz original: {matrix_df.shape}")
-    print(f"Índices da matriz (tempos) exemplo: {matrix_df.index.tolist()[:10]}")
-    print(f"Colunas da matriz (IPs) exemplo: {matrix_df.columns.tolist()[:10]}")
-
-    # Ajuste: tempos são os índices
     matrix_df.index = matrix_df.index.astype(str)
     tempos_2025 = [str(t).strip() for t in tempos_2025]
-
     tempos_validos = [t for t in tempos_2025 if t in matrix_df.index]
-    tempos_invalidos = [t for t in tempos_2025 if t not in matrix_df.index]
-
-    print(f"Tempos válidos (presentes na matriz): {len(tempos_validos)}")
-    print(f"Tempos inválidos (ausentes na matriz): {len(tempos_invalidos)}")
-    if len(tempos_invalidos) > 0:
-        print(f"Exemplos de tempos inválidos: {tempos_invalidos[:10]}")
-
-    # Ajuste: IPs são colunas
-    matrix_df.columns = matrix_df.columns.astype(str)
     ips = [str(ip).strip() for ip in ips]
-
+    matrix_df.columns = matrix_df.columns.astype(str)
     ips_validos = [ip for ip in ips if ip in matrix_df.columns]
-    ips_invalidos = [ip for ip in ips if ip not in matrix_df.columns]
-
-    print(f"IPs válidos (presentes na matriz): {len(ips_validos)}")
-    print(f"IPs inválidos (ausentes na matriz): {len(ips_invalidos)}")
-    if len(ips_invalidos) > 0:
-        print(f"Exemplos de IPs inválidos: {ips_invalidos[:10]}")
-
     if not ips_validos or not tempos_validos:
-        print("Aviso: Nenhum IP ou tempo válido para plotagem do heatmap.")
         return
-
-    # Selecionar linhas e colunas válidas (tempos nas linhas, IPs nas colunas)
     matriz_filtrada = matrix_df.loc[tempos_validos, ips_validos]
-
-    print(f"Matriz filtrada para heatmap: {matriz_filtrada.shape}")
-
     plt.figure(figsize=(12, 8))
     sns.heatmap(matriz_filtrada, xticklabels=ips_validos, yticklabels=tempos_validos, cmap='YlGnBu')
     plt.xlabel("IPs")
     plt.ylabel("Tempo")
     plt.title(titulo)
-    salvar_figura(caminho)
+    salvar_figura(nome_arquivo)
 
-
-
-
-
-def gerar_trafego_agrupado_tempo(trafego_dict, titulo, caminho):
+def gerar_trafego_agrupado_tempo(trafego_dict, titulo, nome_arquivo):
     if not trafego_dict:
         return
     df = pd.DataFrame(list(trafego_dict.items()), columns=["timestamp", "bytes"])
@@ -214,10 +157,9 @@ def gerar_trafego_agrupado_tempo(trafego_dict, titulo, caminho):
     plt.xticks(rotation=45, ha='right')
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.7)
-    salvar_figura(caminho)
+    salvar_figura(nome_arquivo)
 
-
-def gerar_janela_congestionamento(conexoes, caminho="img/tempo/janela_congestionamento.png"):
+def gerar_janela_congestionamento(conexoes):
     plt.figure(figsize=(12, 6))
     for id_conexao, df in conexoes.items():
         if 'timestamp' in df and 'congestion_window' in df:
@@ -226,10 +168,9 @@ def gerar_janela_congestionamento(conexoes, caminho="img/tempo/janela_congestion
     plt.ylabel("Janela de Congestionamento (bytes)")
     plt.title("Curva da Janela de Congestionamento ao Longo do Tempo")
     plt.legend(loc='best', fontsize='small')
-    salvar_figura(caminho)
+    salvar_figura("janela_congestionamento.png")
 
-
-def gerar_scatter_rtt(conexoes, caminho="img/scatter/rtt_por_conexao.png"):
+def gerar_scatter_rtt(conexoes):
     dados = []
     for id_conexao, df in conexoes.items():
         if 'rtt' in df.columns:
@@ -244,10 +185,9 @@ def gerar_scatter_rtt(conexoes, caminho="img/scatter/rtt_por_conexao.png"):
     plt.xlabel("Conexão")
     plt.ylabel("RTT (s)")
     plt.title("Dispersão do RTT por Conexão")
-    salvar_figura(caminho)
+    salvar_figura("rtt_por_conexao.png")
 
-
-def gerar_cdf_estabelecimento(conexoes, caminho="img/tempo/cdf_estabelecimento.png"):
+def gerar_cdf_estabelecimento(conexoes):
     tempos = []
     for conn in conexoes.values():
         if 'tempo_estabelecimento' in conn.columns:
@@ -261,10 +201,9 @@ def gerar_cdf_estabelecimento(conexoes, caminho="img/tempo/cdf_estabelecimento.p
     plt.xlabel("Tempo de Estabelecimento (s)")
     plt.ylabel("CDF")
     plt.title("CDF do Tempo de Estabelecimento das Conexões")
-    salvar_figura(caminho)
+    salvar_figura("cdf_estabelecimento.png")
 
-
-def gerar_histograma_retransmissoes(conexoes, caminho="img/barras/retransmissoes.png"):
+def gerar_histograma_retransmissoes(conexoes):
     taxas = []
     for conn in conexoes.values():
         total = len(conn)
@@ -280,10 +219,9 @@ def gerar_histograma_retransmissoes(conexoes, caminho="img/barras/retransmissoes
     plt.xlabel("Taxa de Retransmissões")
     plt.ylabel("Número de Conexões")
     plt.title("Histograma da Taxa de Retransmissões por Conexão")
-    salvar_figura(caminho)
+    salvar_figura("retransmissoes.png")
 
-
-def comparar_conexoes(stats_conexoes, caminho="img/barras/conexoes_curta_longa.png"):
+def comparar_conexoes(stats_conexoes):
     duracoes = []
     for conn in stats_conexoes.values():
         if 'timestamp' in conn.columns and not conn.empty:
@@ -301,8 +239,7 @@ def comparar_conexoes(stats_conexoes, caminho="img/barras/conexoes_curta_longa.p
     plt.xlabel("Tipo de Conexão")
     plt.ylabel("Número de Conexões")
     plt.title("Comparação entre Conexões Curtas e Longas")
-    salvar_figura(caminho)
-
+    salvar_figura("conexoes_curta_longa.png")
 
 if __name__ == "__main__":
     caminho_stats = "stats_completo.json"
@@ -313,7 +250,7 @@ if __name__ == "__main__":
     with open(caminho_stats, "r") as f:
         stats = json.load(f)
 
-    # Garantir que conexoes_tcp seja dicionário de DataFrames (json -> dict de listas)
+    # Converter conexoes_tcp em dict de DataFrames
     if "conexoes_tcp" in stats:
         conexoes_tcp = {}
         for k, v in stats["conexoes_tcp"].items():

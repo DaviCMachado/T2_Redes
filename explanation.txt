@@ -1,0 +1,73 @@
+Explicação das Estratégias para Obtenção das Estatísticas do Tráfego TCP
+Este documento descreve as principais estratégias e métodos adotados no script de análise para extrair estatísticas detalhadas a partir de um arquivo CSV contendo dados de pacotes TCP.
+
+1. Processamento Inicial e Preparação dos Dados
+Leitura do CSV: Os dados são carregados com tipos explícitos para as colunas, garantindo consistência.
+
+Conversão de timestamps: O campo timestamp é convertido de segundos para objetos datetime com tratamento de erros, removendo valores inválidos.
+
+Filtragem: Apenas pacotes do protocolo TCP são considerados para análise.
+
+Identificação das conexões: Cada conexão é identificada pela concatenação de IP e porta de origem com IP e porta de destino (connection_id), permitindo agrupar pacotes por fluxo.
+
+2. Estimativa da Janela de Congestionamento
+Objetivo: Estimar indiretamente o comportamento da janela de congestionamento TCP.
+
+Método: Para cada conexão, calcula-se a diferença de tempo entre pacotes consecutivos (delta).
+
+Janela móvel: Aplica-se uma média móvel de janela 10 sobre esses intervalos temporais para suavizar variações.
+
+Interpretação: Intervalos maiores indicam possíveis reduções na taxa de envio, refletindo uma janela de congestionamento menor.
+
+3. Estimativa do RTT (Round Trip Time)
+Identificação do handshake TCP: São considerados pacotes com flag SYN para localizar o início da conexão.
+
+Cálculo do RTT: Para cada conexão, calcula-se o tempo entre o primeiro pacote SYN e o segundo (esperadamente o SYN-ACK).
+
+Resultado: Valores que indicam o atraso estimado na ida e volta do handshake inicial.
+
+4. Tempo de Estabelecimento da Conexão
+Definição: Intervalo entre o primeiro pacote SYN e o primeiro pacote ACK subsequente na conexão.
+
+Método: Para cada conexão, extrai-se o timestamp mínimo dos pacotes SYN e ACK e calcula-se a diferença.
+
+Objetivo: Medir o tempo necessário para o estabelecimento da conexão TCP.
+
+5. Análise de Retransmissões
+Condição: Apenas executada se houver a coluna retransmission.
+
+Métrica: Taxa de retransmissão por IP de origem, calculada como proporção de pacotes retransmitidos sobre total de pacotes enviados.
+
+Uso: Indicador de problemas na qualidade da conexão.
+
+6. Duração da Conexão
+Cálculo: Para cada conexão, obtém-se o intervalo entre o timestamp do último e do primeiro pacote.
+
+Utilidade: Avalia a longevidade dos fluxos TCP observados.
+
+7. Throughput Médio por Conexão
+Cálculo: Soma dos bytes transmitidos dividida pela duração da conexão.
+
+Interpretação: Mede a taxa média de transferência para cada fluxo TCP.
+
+8. Estatísticas de Segmentos TCP
+Tamanhos dos segmentos: Lista simples com o tamanho de todos os segmentos (pacotes) analisados.
+
+MSS (Maximum Segment Size) por conexão: Identificado como o maior segmento transmitido em cada conexão.
+
+9. Fluxos Elefantes e Microbursts
+Fluxos elefantes: São as 10 conexões que mais transmitiram dados em bytes, indicativos de fluxos com grande volume.
+
+Microbursts: Identificados como os momentos em que houve o maior número de pacotes transmitidos em um segundo, extraindo os 10 maiores.
+
+10. Portas de Destino mais Usadas
+Contagem: Identificação das 10 portas de destino mais frequentes no conjunto de dados, refletindo as aplicações predominantes.
+
+11. Dados Auxiliares para Visualizações
+Top IPs destino: Os 10 IPs de destino mais frequentes.
+
+Pacotes por segundo: Contagem de pacotes agrupada por segundos.
+
+Tráfego por minuto: Soma do volume de bytes transmitidos por minuto.
+
+Mapa de calor: Frequência de pacotes transmitidos ao longo do tempo por IP de origem, para os 10 IPs com maior volume.
