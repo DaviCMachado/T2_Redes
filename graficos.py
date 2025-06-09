@@ -29,6 +29,17 @@ def gerar_graficos(stats):
 
     # Barra top IPs destino
     gerar_barra(stats.get("top_ips_destino", {}), "Top IPs de Destino", "ip_destino.png")
+    
+    # Top IPs de destino
+    if "top_ips_destino" in stats and stats["top_ips_destino"]:
+        plt.figure(figsize=(10, 4))
+        ips = list(stats["top_ips_destino"].keys())
+        contagens = list(stats["top_ips_destino"].values())
+        plt.barh(ips, contagens, color='crimson')
+        plt.title("Top 10 IPs de Destino")
+        plt.xlabel("Nº de Pacotes")
+        plt.tight_layout()
+        salvar_figura("top_ips_destino.png")
 
     # Pacotes por tempo
     pacotes_por_tempo = stats.get("pacotes_por_tempo", None)

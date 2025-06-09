@@ -1,4 +1,3 @@
-
 // Arquivo utilizado para extrair os arquivos TCP e escrevê-los em um csv
 
 // passo a passo:
@@ -8,7 +7,6 @@
 // gcc extrator.c -lpcap -lpthread -o extrator  -> compilar
 
 // ./extrator batches/parte_00*.pcap  --> rodar para todas as partes
-
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,15 +18,6 @@
 #include <arpa/inet.h>
 
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
-
-const char *protocolo_para_str(uint8_t protocolo) 
-{
-    switch (protocolo) 
-    {
-        case IPPROTO_TCP: return "TCP";
-        default: return "OUTRO";
-    }
-}
 
 void tcp_flags_to_str(uint8_t flags, char *out) 
 {
@@ -46,20 +35,17 @@ void manipular_pacote(unsigned char *args, const struct pcap_pkthdr *cabecalho, 
 {
     FILE *data = (FILE *)args;
 
-    if (cabecalho->caplen < 14 + sizeof(struct iphdr)) 
-        return;
-
+    // Assumindo Ethernet + IPv4 + TCP
     const struct iphdr *ip_header = (struct iphdr *)(pacote + 14);
-    
-    if (ip_header->protocol != IPPROTO_TCP) 
-        return;
-
     size_t ip_header_len = ip_header->ihl * 4;
-    
-    if (cabecalho->caplen < 14 + ip_header_len + sizeof(struct tcphdr)) 
-        return;
 
     const struct tcphdr *tcp_header = (struct tcphdr *)(pacote + 14 + ip_header_len);
+    size_t tcp_header_len = tcp_header->doff * 4;
+
+    // Calcula tamanho do segmento TCP (payload)
+    size_t segmento_tcp_len = 0;
+    if (cabecalho->len >= 14 + ip_header_len + tcp_header_len)
+        segmento_tcp_len = cabecalho->len - 14 - ip_header_len - tcp_header_len;
 
     char src_ip[INET_ADDRSTRLEN], dst_ip[INET_ADDRSTRLEN];
     struct in_addr src_addr = {.s_addr = ip_header->saddr};
@@ -79,17 +65,43 @@ void manipular_pacote(unsigned char *args, const struct pcap_pkthdr *cabecalho, 
     char flags_str[8];
     tcp_flags_to_str(tcp_header->th_flags, flags_str);
 
+    // Parse das opções TCP para extrair MSS se houver
+    int mss_value = -1;
+    if (tcp_header->th_flags & TH_SYN) {
+        const unsigned char *options = (const unsigned char *)(tcp_header + 1);
+        int optlen = tcp_header_len - sizeof(struct tcphdr);
+        int i = 0;
+        while (i < optlen) {
+            uint8_t kind = options[i];
+
+            if (kind == 0) break;              // End of options list
+            if (kind == 1) { i++; continue; }  // No-Op (1 byte)
+
+            if (i + 1 >= optlen) break;
+            uint8_t len = options[i + 1];
+            if (len < 2 || i + len > optlen) break;
+
+            if (kind == 2 && len == 4) {
+                mss_value = (options[i + 2] << 8) | options[i + 3];
+                break;
+            }
+
+            i += len;
+        }
+    }
+
     pthread_mutex_lock(&lock);
-    fprintf(data, "%.6f,%s,%d,%s,%d,%s,%u,%s,%u,%u,%u\n",
+    fprintf(data, "%.6f,%s,%d,%s,%d,TCP,%u,%s,%u,%u,%u,%zu,%d\n",
         timestamp,
         src_ip, src_port,
         dst_ip, dst_port,
-        protocolo_para_str(ip_header->protocol),
         cabecalho->len,
         flags_str,
         seq,
         ack,
-        window
+        window,
+        segmento_tcp_len,
+        mss_value
     );
     pthread_mutex_unlock(&lock);
 }
@@ -131,7 +143,7 @@ int main(int argc, char *argv[])
     }
 
     FILE *data = fopen("data.csv", "w");
-    fprintf(data, "timestamp,src_ip,src_port,dst_ip,dst_port,protocol,length,flags,seq,ack,window\n");
+    fprintf(data, "timestamp,src_ip,src_port,dst_ip,dst_port,protocol,length,flags,seq,ack,window,segmento_tcp_len,mss\n");
     fclose(data);
 
     int num_arquivos = argc - 1;
